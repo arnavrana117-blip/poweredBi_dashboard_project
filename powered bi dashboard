@@ -1,0 +1,182 @@
+powered_bi dashboard
+# Power BI Dashboard — Design Guide
+
+This guide documents how to build the Power BI dashboard on top of `sales_data.csv` /
+`Sales_Data_Analysis.xlsx`, including the data model, DAX measures, page layouts, and
+interactivity. Import the CSV (or the `Sales_Data` sheet of the Excel workbook) as the
+single fact table — no other tables are required, but a Date table is recommended.
+
+---
+
+## 1. Data Model
+
+**Fact table:** `Sales_Data` (5,000 rows)
+| Column | Type |
+|---|---|
+| Order_ID | Text |
+| Order_Date | Date |
+| Customer_Name | Text |
+| Product | Text |
+| Category | Text |
+| Region | Text |
+| State | Text |
+| Sales | Decimal |
+| Quantity | Whole number |
+| Discount | Decimal (0–1) |
+| Cost | Decimal |
+| Profit | Decimal |
+
+**Recommended additions:**
+- Create a dedicated **Date** table (Power Query or DAX `CALENDAR()`) and mark it as the
+  official date table. Mark it as a Date Table (Modeling → Mark as Date Table) so
+  time-intelligence DAX functions (`SAMEPERIODLASTYEAR`, `DATESYTD`) work correctly.
+- Relationship: `Date[Date]` (1) → `Sales_Data[Order_Date]` (many).
+- Optional: split `Product`/`Category` into a small dimension table if you plan to add
+  product attributes (e.g., supplier, SKU) later.
+
+---
+
+## 2. DAX Measures
+
+Create these in a dedicated **_Measures** table for organization.
+
+```DAX
+Total Sales = SUM(Sales_Data[Sales])
+
+Total Cost = SUM(Sales_Data[Cost])
+
+Total Profit = SUM(Sales_Data[Profit])
+
+Total Orders = DISTINCTCOUNT(Sales_Data[Order_ID])
+
+Total Units Sold = SUM(Sales_Data[Quantity])
+
+Profit Margin % = DIVIDE([Total Profit], [Total Sales], 0)
+
+Avg Order Value = DIVIDE([Total Sales], [Total Orders], 0)
+
+Avg Discount % = AVERAGE(Sales_Data[Discount])
+
+Avg Unit Price = DIVIDE([Total Sales], [Total Units Sold], 0)
+
+-- Time intelligence (requires marked Date table)
+Sales PY = CALCULATE([Total Sales], SAMEPERIODLASTYEAR('Date'[Date]))
+
+Sales YoY % = DIVIDE([Total Sales] - [Sales PY], [Sales PY], 0)
+
+Sales MTD = TOTALMTD([Total Sales], 'Date'[Date])
+
+Sales YTD = TOTALYTD([Total Sales], 'Date'[Date])
+
+-- Ranking / contextual measures
+Rank by Sales = RANKX(ALL(Sales_Data[Product]), [Total Sales])
+
+% of Total Sales = DIVIDE([Total Sales], CALCULATE([Total Sales], ALL(Sales_Data)))
+
+Top 10 Products Flag =
+VAR CurrentRank = [Rank by Sales]
+RETURN IF(CurrentRank <= 10, 1, 0)
+```
+
+---
+
+## 3. Suggested KPI Metrics (Cards Row)
+
+| KPI | Purpose |
+|---|---|
+| **Total Sales** | Headline revenue figure |
+| **Total Profit** | Headline profitability figure |
+| **Profit Margin %** | Efficiency of converting sales to profit |
+| **Total Orders** | Volume of transactions |
+| **Avg Order Value (AOV)** | Spend per transaction, tracks basket size |
+| **Total Units Sold** | Volume metric independent of price |
+| **Avg Discount %** | Monitors discounting behavior/margin erosion |
+| **Sales YoY %** | Growth trend vs. prior year |
+
+Use **Card** or **KPI** visuals with conditional formatting (green/red) for YoY growth
+and margin thresholds (e.g., red if margin < 20%).
+
+---
+
+## 4. Dashboard Pages & Layout
+
+### Page 1 — Executive Overview
+- **Top strip:** 6 KPI cards (Total Sales, Total Profit, Margin %, Orders, AOV, YoY %)
+- **Center-left:** Line/area chart — *Monthly Sales & Profit Trend* (dual axis)
+- **Center-right:** Donut/Pie chart — *Sales Share by Category*
+- **Bottom-left:** Bar chart — *Sales by Region*
+- **Bottom-right:** Map visual (or filled map) — *Sales by State*
+- **Slicers panel (left rail):** Date range (between slider), Region, Category, Product
+
+### Page 2 — Product & Category Performance
+- **Top:** Matrix/table — Category → Product drill-down with Sales, Profit, Margin %,
+  Units Sold (conditional formatting data bars on Sales and Margin %)
+- **Top-right:** Bar chart — *Top 10 Products by Revenue*
+- **Bottom-left:** Scatter chart — *Sales vs. Profit Margin by Product* (bubble size =
+  Units Sold) to spot high-volume/low-margin items
+- **Bottom-right:** Bar chart — *Bottom 10 Products by Margin %* (underperformers)
+
+### Page 3 — Regional & Customer Insights
+- **Top-left:** Filled map — *Profit by State*
+- **Top-right:** Bar chart — *Sales by Region* with Region slicer synced
+- **Bottom-left:** Table — *Top 20 Customers by Lifetime Sales* with AOV column
+- **Bottom-right:** Column chart — *Repeat vs One-time Customers*
+
+### Page 4 — Discounts & Order Trends
+- **Top:** Line chart — *Cumulative Sales Over Time*
+- **Bottom-left:** Clustered bar — *Margin % by Discount Band*
+- **Bottom-right:** Histogram/column — *Order Quantity Distribution*
+
+---
+
+## 5. Interactivity & Filters
+
+- **Slicers:** Order Date (between), Region, State, Category, Product, Discount band.
+  Sync slicers across all pages via *Format → Edit Interactions* / Sync Slicers pane.
+- **Drill-through page:** Build a "Product Detail" drill-through page — right-click a
+  product bar on Page 2 to jump into a detailed view (trend, top customers for that
+  product, region split).
+- **Cross-filtering:** Keep default cross-highlighting so clicking a Region bar filters
+  the Category donut and product table.
+- **Bookmarks:** Add a "Reset Filters" button (Bookmark + Home icon) on each page.
+- **Tooltips:** Build a custom tooltip page showing Sales, Profit, and Margin % on hover
+  for chart data points.
+
+---
+
+## 6. Visual Design Guidelines
+
+- **Color palette:** One primary brand color (e.g., navy `#1F4E78`) for Sales, a
+  secondary accent (e.g., teal `#2E9E8E`) for Profit, and a neutral gray for Cost —
+  keep consistent across all pages.
+- **Typography:** Segoe UI (Power BI default) throughout; bold only for KPI numbers and
+  titles.
+- **Layout:** 16:9 canvas, consistent margins, KPI cards top-aligned, slicers pinned
+  left in a shaded panel.
+- **Conditional formatting:** Red/amber/green on Margin % and YoY % to instantly flag
+  underperformance.
+- **Accessibility:** Ensure color contrast, add alt text to visuals, avoid relying on
+  color alone (use data labels).
+
+---
+
+## 7. Business Insights to Surface
+
+- Identify which **category drives the most profit** vs. the most revenue (they may
+  differ — margin mix matters).
+- Flag **products with high sales but low margin** (candidates for pricing review).
+- Show whether **higher discount bands correlate with lower overall margin** — useful
+  for setting discount policy.
+- Highlight **top vs. bottom performing regions/states** to guide territory planning.
+- Distinguish **repeat customers vs one-time buyers** to inform retention strategy.
+- Surface **seasonality** (Nov–Dec spike) to guide inventory and staffing plans.
+
+---
+
+## 8. Suggested Screenshot Placeholders for README
+
+When the .pbix file is built, export these views as PNGs into `/screenshots`:
+1. `executive_overview.png`
+2. `product_category_performance.png`
+3. `regional_customer_insights.png`
+4. `discount_order_trends.png`
