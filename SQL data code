@@ -1,0 +1,204 @@
+SALES DATA ANALYSIS PROJECT
+   Script: 02_analysis_queries.sql
+   Purpose: Business analysis queries used to derive KPIs and
+            insights that feed the Excel and Power BI dashboards
+   ============================================================= */
+
+-- ---------------------------------------------------------------
+-- 1. OVERALL KPI SNAPSHOT
+-- ---------------------------------------------------------------
+SELECT
+    COUNT(DISTINCT order_id)                              AS total_orders,
+    SUM(sales)                                             AS total_sales,
+    SUM(cost)                                              AS total_cost,
+    SUM(profit)                                            AS total_profit,
+    ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2)    AS profit_margin_pct,
+    SUM(quantity)                                          AS total_units_sold,
+    ROUND(SUM(sales) / COUNT(DISTINCT order_id), 2)        AS avg_order_value,
+    ROUND(AVG(discount) * 100, 2)                          AS avg_discount_pct
+FROM sales_data;
+
+-- ---------------------------------------------------------------
+-- 2. MONTHLY SALES & PROFIT TREND
+-- ---------------------------------------------------------------
+SELECT
+    DATE_TRUNC('month', order_date)::date  AS sales_month,
+    SUM(sales)                             AS monthly_sales,
+    SUM(profit)                            AS monthly_profit,
+    COUNT(DISTINCT order_id)               AS orders,
+    ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2) AS margin_pct
+FROM sales_data
+GROUP BY 1
+ORDER BY 1;
+
+-- ---------------------------------------------------------------
+-- 3. YEAR-OVER-YEAR GROWTH BY MONTH NUMBER
+-- ---------------------------------------------------------------
+SELECT
+    EXTRACT(YEAR  FROM order_date)  AS sales_year,
+    EXTRACT(MONTH FROM order_date)  AS sales_month_num,
+    SUM(sales)                      AS monthly_sales
+FROM sales_data
+GROUP BY 1, 2
+ORDER BY 1, 2;
+
+-- ---------------------------------------------------------------
+-- 4. SALES & PROFIT BY CATEGORY
+-- ---------------------------------------------------------------
+SELECT
+    category,
+    SUM(sales)                                          AS total_sales,
+    SUM(profit)                                          AS total_profit,
+    ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2)  AS margin_pct,
+    SUM(quantity)                                        AS units_sold,
+    COUNT(DISTINCT order_id)                             AS orders
+FROM sales_data
+GROUP BY category
+ORDER BY total_sales DESC;
+
+-- ---------------------------------------------------------------
+-- 5. TOP 10 BEST-SELLING PRODUCTS (BY REVENUE)
+-- ---------------------------------------------------------------
+SELECT
+    product,
+    category,
+    SUM(sales)                AS total_sales,
+    SUM(profit)                AS total_profit,
+    SUM(quantity)               AS units_sold,
+    COUNT(DISTINCT order_id)   AS orders
+FROM sales_data
+GROUP BY product, category
+ORDER BY total_sales DESC
+LIMIT 10;
+
+-- ---------------------------------------------------------------
+-- 6. BOTTOM 10 PRODUCTS BY PROFIT MARGIN (underperformers)
+-- ---------------------------------------------------------------
+SELECT
+    product,
+    category,
+    SUM(sales)                                            AS total_sales,
+    SUM(profit)                                           AS total_profit,
+    ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2)   AS margin_pct
+FROM sales_data
+GROUP BY product, category
+HAVING SUM(sales) > 0
+ORDER BY margin_pct ASC
+LIMIT 10;
+
+-- ---------------------------------------------------------------
+-- 7. SALES PERFORMANCE BY REGION & STATE
+-- ---------------------------------------------------------------
+SELECT
+    region,
+    state,
+    SUM(sales)                 AS total_sales,
+    SUM(profit)                AS total_profit,
+    COUNT(DISTINCT order_id)   AS orders
+FROM sales_data
+GROUP BY region, state
+ORDER BY region, total_sales DESC;
+
+-- ---------------------------------------------------------------
+-- 8. REGIONAL SUMMARY (ROLL-UP)
+-- ---------------------------------------------------------------
+SELECT
+    region,
+    SUM(sales)                                            AS total_sales,
+    SUM(profit)                                           AS total_profit,
+    ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2)   AS margin_pct,
+    RANK() OVER (ORDER BY SUM(sales) DESC)                AS sales_rank
+FROM sales_data
+GROUP BY region
+ORDER BY total_sales DESC;
+
+-- ---------------------------------------------------------------
+-- 9. TOP 20 CUSTOMERS BY LIFETIME SALES
+-- ---------------------------------------------------------------
+SELECT
+    customer_name,
+    COUNT(DISTINCT order_id)   AS total_orders,
+    SUM(sales)                 AS lifetime_sales,
+    SUM(profit)                AS lifetime_profit,
+    ROUND(SUM(sales) / COUNT(DISTINCT order_id), 2) AS avg_order_value
+FROM sales_data
+GROUP BY customer_name
+ORDER BY lifetime_sales DESC
+LIMIT 20;
+
+-- ---------------------------------------------------------------
+-- 10. DISCOUNT IMPACT ANALYSIS
+--     Does higher discount correlate with lower margin?
+-- ---------------------------------------------------------------
+SELECT
+    discount,
+    COUNT(DISTINCT order_id)                              AS orders,
+    SUM(sales)                                            AS total_sales,
+    SUM(profit)                                           AS total_profit,
+    ROUND(SUM(profit) / NULLIF(SUM(sales), 0) * 100, 2)   AS margin_pct
+FROM sales_data
+GROUP BY discount
+ORDER BY discount;
+
+-- ---------------------------------------------------------------
+-- 11. ORDER SIZE (QUANTITY) DISTRIBUTION
+-- ---------------------------------------------------------------
+SELECT
+    quantity,
+    COUNT(*)          AS order_count,
+    SUM(sales)        AS total_sales
+FROM sales_data
+GROUP BY quantity
+ORDER BY quantity;
+
+-- ---------------------------------------------------------------
+-- 12. RUNNING (CUMULATIVE) SALES TOTAL OVER TIME
+-- ---------------------------------------------------------------
+SELECT
+    order_date,
+    SUM(sales) OVER (ORDER BY order_date
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_sales
+FROM (
+    SELECT order_date, SUM(sales) AS sales
+    FROM sales_data
+    GROUP BY order_date
+) daily
+ORDER BY order_date;
+
+-- ---------------------------------------------------------------
+-- 13. CATEGORY PERFORMANCE BY REGION (CROSS-TAB STYLE)
+-- ---------------------------------------------------------------
+SELECT
+    region,
+    category,
+    SUM(sales)  AS total_sales,
+    SUM(profit) AS total_profit
+FROM sales_data
+GROUP BY region, category
+ORDER BY region, total_sales DESC;
+
+-- ---------------------------------------------------------------
+-- 14. HIGH-VALUE ORDERS (outlier detection, top 1%)
+-- ---------------------------------------------------------------
+SELECT order_id, order_date, customer_name, product, sales, profit
+FROM sales_data
+WHERE sales >= (
+    SELECT PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY sales)
+    FROM sales_data
+)
+ORDER BY sales DESC;
+
+-- ---------------------------------------------------------------
+-- 15. REPEAT VS ONE-TIME CUSTOMERS
+-- ---------------------------------------------------------------
+WITH customer_orders AS (
+    SELECT customer_name, COUNT(DISTINCT order_id) AS order_count
+    FROM sales_data
+    GROUP BY customer_name
+)
+SELECT
+    CASE WHEN order_count = 1 THEN 'One-time' ELSE 'Repeat' END AS customer_type,
+    COUNT(*)              AS customer_count,
+    SUM(order_count)       AS total_orders
+FROM customer_orders
+GROUP BY 1;
