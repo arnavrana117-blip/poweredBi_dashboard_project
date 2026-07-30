@@ -1,0 +1,34 @@
+import pandas as pd
+
+matches = pd.read_csv("../Data/matches.csv")
+deliveries = pd.read_csv("../Data/deliveries.csv")
+
+
+print(matches.head())
+print(deliveries.head())
+
+
+# Missing values
+
+print(matches.isnull().sum())
+
+
+# Remove duplicates
+
+matches.drop_duplicates(inplace=True)
+deliveries.drop_duplicates(inplace=True)
+
+
+# Save Clean Data
+
+matches.to_csv(
+"../Data/clean_matches.csv",
+index=False
+)
+
+deliveries.to_csv(
+"../Data/clean_deliveries.csv",
+index=False
+)
+
+print("Data Cleaning Completed")
