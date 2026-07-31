@@ -1,0 +1,16 @@
+def find_largest(arr):
+    largest = arr[0]
+
+    for num in arr:
+        if num > largest:
+            largest = num
+
+    return largest
+
+
+# Input
+arr = [10, 25, 7, 40, 15]
+
+# Output
+result = find_largest(arr)
+print("Largest element:", result)
